@@ -15,6 +15,7 @@
         button:hover, .btn:hover { transform: scale(1.02); background: linear-gradient(90deg, #1e5ad9, #1240a0); }
         .btn-secondary { background: linear-gradient(90deg, #475569, #334155); }
         .btn-danger { background: linear-gradient(90deg, #dc2626, #b91c1c); }
+        .btn-success { background: linear-gradient(90deg, #10b981, #059669); }
         input, select, textarea { background: rgba(0,0,0,0.4); border: 1px solid #2d3a5e; padding: 12px 16px; border-radius: 24px; color: white; width: 100%; outline: none; margin: 8px 0; }
         input:focus, select:focus { border-color: #3b82f6; }
         .sidebar { position: fixed; top: 0; left: -280px; width: 280px; height: 100%; background: rgba(8, 12, 25, 0.96); backdrop-filter: blur(20px); z-index: 1000; transition: 0.3s; padding: 20px; overflow-y: auto; }
@@ -27,15 +28,22 @@
         .platform-icon-item:hover { background: #2b6ef0; transform: translateY(-3px); }
         .platform-icon-item.active { background: #2b6ef0; border-color: white; }
         .platform-icon-item i { font-size: 20px; }
+        .payment-method-card { background: rgba(30, 41, 59, 0.5); border-radius: 20px; padding: 20px; margin: 15px 0; cursor: pointer; transition: all 0.2s; border: 2px solid transparent; }
+        .payment-method-card:hover { background: rgba(30, 41, 59, 0.8); transform: translateX(5px); }
+        .payment-method-card.selected { border-color: #10b981; background: rgba(16, 185, 129, 0.1); }
         .order-summary { background: rgba(0, 200, 255, 0.1); border-radius: 20px; padding: 15px; margin-top: 20px; }
         .modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #0f172ae6; backdrop-filter: blur(20px); border-radius: 32px; padding: 24px; width: 90%; max-width: 500px; z-index: 1100; display: none; border: 1px solid cyan; }
         .toast { position: fixed; bottom: 20px; right: 20px; background: #1e293b; padding: 12px 20px; border-radius: 40px; z-index: 2000; border-left: 4px solid #2b6ef0; max-width: 350px; }
         .currency-btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
         .form-row { display: flex; gap: 15px; flex-wrap: wrap; }
         .form-row > * { flex: 1; }
+        .service-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; margin-top: 20px; }
+        .service-card { cursor: pointer; }
+        .service-card:hover { transform: translateY(-5px); }
+        .grid-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin: 25px 0; }
         @media (max-width: 768px) { .form-row { flex-direction: column; } .platform-icon-item { padding: 6px 12px; font-size: 12px; } }
-        .success-modal { background: linear-gradient(135deg, #065f46, #047857); }
         .service-detail-card { background: rgba(0,0,0,0.3); border-radius: 20px; padding: 15px; margin: 15px 0; }
+        .badge { background: #2b6ef0; padding: 4px 12px; border-radius: 20px; font-size: 12px; }
     </style>
 </head>
 <body>
@@ -91,6 +99,7 @@
     let exchangeRates = { PKR:1, USD:0.0036, AED:0.0132, SAR:0.0135, INR:0.3 };
     let allServices = [];
     let selectedService = null;
+    let selectedPaymentMethod = null;
     
     // Platform icons mapping
     const platforms = [
@@ -259,7 +268,105 @@
         document.getElementById("forgotBtn")?.addEventListener("click", () => showToast("Contact admin to reset password."));
     }
     
-    // Main Home Page with Platform Icons and Order Form
+    // ========== SERVICES PAGE WITH PLATFORM FILTER ==========
+    async function renderServices() { 
+        await loadServices(); 
+        let platformsHtml = platforms.map(p => `
+            <div class="platform-icon-item" data-platform="${p.name}">
+                <i class="${p.icon}" style="color: ${p.color}"></i>
+                <span>${p.name}</span>
+            </div>
+        `).join('');
+        
+        let html = `
+            <div class="glass-card">
+                <h3 style="margin-bottom:20px;"><i class="fas fa-filter"></i> Filter by Platform</h3>
+                <div class="platform-icons" id="servicePlatformIcons">
+                    <div class="platform-icon-item active" data-platform="all">
+                        <i class="fas fa-th-large"></i>
+                        <span>All</span>
+                    </div>
+                    ${platformsHtml}
+                </div>
+                <input type="text" id="searchServiceInput" placeholder="🔍 Search services by name..." style="margin-top: 20px;">
+            </div>
+            <div id="servicesGrid" class="service-grid"></div>
+        `;
+        document.getElementById("pageContent").innerHTML = html;
+        
+        // Add click handlers for platform icons
+        document.querySelectorAll('#servicePlatformIcons .platform-icon-item').forEach(el => {
+            el.addEventListener('click', () => {
+                document.querySelectorAll('#servicePlatformIcons .platform-icon-item').forEach(i => i.classList.remove('active'));
+                el.classList.add('active');
+                filterServicesByPlatform();
+            });
+        });
+        
+        document.getElementById("searchServiceInput").addEventListener("input", filterServicesByPlatform);
+        filterServicesByPlatform();
+    }
+    
+    function filterServicesByPlatform() {
+        let activePlatform = document.querySelector('#servicePlatformIcons .platform-icon-item.active')?.dataset.platform || 'all';
+        let searchTerm = document.getElementById("searchServiceInput")?.value.toLowerCase() || "";
+        
+        let filtered = allServices.filter(s => {
+            let matchesPlatform = (activePlatform === 'all' || s.Platform === activePlatform);
+            let matchesSearch = s.Name?.toLowerCase().includes(searchTerm) || s.ServiceId?.toString().includes(searchTerm);
+            return matchesPlatform && matchesSearch;
+        });
+        
+        let grid = document.getElementById("servicesGrid");
+        if (filtered.length === 0) {
+            grid.innerHTML = '<div class="glass-card" style="text-align:center; grid-column:1/-1;">No services found</div>';
+            return;
+        }
+        
+        grid.innerHTML = filtered.map(s => {
+            let ratePerUnit = s.Per1k ? s.Rate / 1000 : s.Rate;
+            let platformIcon = platforms.find(p => p.name === s.Platform) || platforms[0];
+            return `
+                <div class="glass-card service-card" onclick="quickOrderFromService('${s.ServiceId}')">
+                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                        <i class="${platformIcon?.icon || 'fas fa-globe'}" style="font-size:28px; color:${platformIcon?.color || '#fff'}"></i>
+                        <h3 style="font-size:18px;">${s.Name}</h3>
+                    </div>
+                    <div style="margin-top:10px;">
+                        <p><i class="fas fa-tag"></i> <strong>Rate:</strong> ${formatCurr(ratePerUnit)} ${s.Per1k ? '/1000' : '/unit'}</p>
+                        <p><i class="fas fa-chart-line"></i> <strong>Min/Max:</strong> ${s.MinQty} - ${s.MaxQty}</p>
+                        <p><i class="fas fa-clock"></i> <strong>Delivery:</strong> ${s.DeliveryTime || '1-2 hours'}</p>
+                    </div>
+                    <button class="btn" style="margin-top:15px; width:100%;" onclick="event.stopPropagation(); navigateTo('home'); setTimeout(()=>selectServiceByPlatform('${s.Platform}', '${s.ServiceId}'), 100);">
+                        Order Now <i class="fas fa-arrow-right"></i>
+                    </button>
+                </div>
+            `;
+        }).join('');
+    }
+    
+    window.quickOrderFromService = (serviceId) => {
+        let service = allServices.find(s => s.ServiceId === serviceId);
+        if (service) {
+            navigateTo('home');
+            setTimeout(() => selectServiceByPlatform(service.Platform, service.ServiceId), 100);
+        }
+    };
+    
+    function selectServiceByPlatform(platform, serviceId) {
+        // This will be called after navigating to home
+        let platformSelect = document.getElementById("platformSelect");
+        if (platformSelect) {
+            platformSelect.value = platform;
+            updateServiceDropdown();
+            setTimeout(() => {
+                document.getElementById("serviceSelect").value = serviceId;
+                showServiceDetails();
+            }, 100);
+        }
+    }
+    
+    // ========== HOME PAGE WITH ORDER FORM ==========
     async function renderHome() { 
         await loadServices();
         let balance = currentUser?.wallet || 0;
@@ -271,8 +378,6 @@
             </div>
         `).join('');
         
-        let serviceOptions = '<option value="">Select a service</option>';
-        
         let html = `
             <div class="glass-card" style="margin-bottom:20px;">
                 <h3><i class="fas fa-coins"></i> Wallet Balance: ${formatCurr(balance)}</h3>
@@ -280,7 +385,7 @@
             
             <div class="glass-card">
                 <h3 style="margin-bottom:20px;"><i class="fas fa-filter"></i> Filter by Platform</h3>
-                <div class="platform-icons" id="platformIcons">
+                <div class="platform-icons" id="homePlatformIcons">
                     ${platformsHtml}
                 </div>
                 
@@ -295,7 +400,7 @@
                     <div style="flex:2">
                         <label><i class="fas fa-list"></i> Select Service</label>
                         <select id="serviceSelect">
-                            ${serviceOptions}
+                            <option value="">Select a service</option>
                         </select>
                     </div>
                 </div>
@@ -308,7 +413,6 @@
                 </div>
                 
                 <div id="dynamicFields"></div>
-                
                 <div id="serviceDetails" class="service-detail-card" style="display:none;"></div>
                 
                 <div class="order-summary" id="orderSummary" style="display:none;">
@@ -326,14 +430,12 @@
         
         document.getElementById("pageContent").innerHTML = html;
         
-        // Populate platform filter icons
-        document.querySelectorAll('.platform-icon-item').forEach(el => {
+        document.querySelectorAll('#homePlatformIcons .platform-icon-item').forEach(el => {
             el.addEventListener('click', () => {
                 const platform = el.dataset.platform;
                 document.getElementById('platformSelect').value = platform;
                 updateServiceDropdown();
-                // Highlight active
-                document.querySelectorAll('.platform-icon-item').forEach(i => i.classList.remove('active'));
+                document.querySelectorAll('#homePlatformIcons .platform-icon-item').forEach(i => i.classList.remove('active'));
                 el.classList.add('active');
             });
         });
@@ -342,20 +444,21 @@
         document.getElementById("serviceSelect").addEventListener("change", showServiceDetails);
         document.getElementById("quantity").addEventListener("input", calculateTotal);
         document.getElementById("placeOrderBtn").addEventListener("click", placeOrder);
-        document.getElementById("clearFormBtn").addEventListener("click", clearForm);
+        document.getElementById("clearFormBtn").addEventListener("click", clearOrderForm);
         
         updateServiceDropdown();
     }
     
     function updateServiceDropdown() {
         let platform = document.getElementById("platformSelect").value;
-        let filtered = platform ? allServices.filter(s => s.Platform === platform) : allServices;
+        let filtered = platform ? allServices.filter(s => s.Platform === platform) : [];
         let select = document.getElementById("serviceSelect");
         select.innerHTML = '<option value="">Select a service</option>';
         filtered.forEach(s => {
             let opt = document.createElement("option");
             opt.value = s.ServiceId;
-            opt.innerText = `${s.Name} - ${formatCurr(s.Per1k ? s.Rate/1000 : s.Rate)} ${s.Per1k ? '/1k' : '/unit'}`;
+            let ratePerUnit = s.Per1k ? s.Rate/1000 : s.Rate;
+            opt.innerText = `${s.Name} - ${formatCurr(ratePerUnit)} ${s.Per1k ? '/1k' : '/unit'}`;
             select.appendChild(opt);
         });
         selectedService = null;
@@ -384,14 +487,11 @@
         document.getElementById("serviceDetails").innerHTML = detailsHtml;
         document.getElementById("serviceDetails").style.display = "block";
         
-        // Dynamic fields based on service flags
         let dynamicHtml = '';
         if (selectedService.IsAccount === true || selectedService.IsAccount === "TRUE") {
             dynamicHtml += `<div class="form-row"><div style="flex:1"><label><i class="fas fa-envelope"></i> Email Address</label><input type="email" id="emailField" placeholder="Enter email for account"></div></div>`;
-        } else if (selectedService.RequireLink === true || selectedService.RequireLink === "TRUE") {
-            dynamicHtml += `<div class="form-row"><div style="flex:1"><label><i class="fas fa-link"></i> Profile/Post Link</label><input type="url" id="linkField" placeholder="Enter Instagram/TikTok/Facebook URL"></div></div>`;
         } else {
-            dynamicHtml += `<div class="form-row"><div style="flex:1"><label><i class="fas fa-link"></i> Profile/Post Link</label><input type="url" id="linkField" placeholder="Enter your profile/post link"></div></div>`;
+            dynamicHtml += `<div class="form-row"><div style="flex:1"><label><i class="fas fa-link"></i> Profile/Post Link</label><input type="url" id="linkField" placeholder="Enter your profile/post link (Instagram/TikTok/Facebook URL)"></div></div>`;
         }
         
         if (selectedService.CustomComments === true || selectedService.CustomComments === "TRUE") {
@@ -408,13 +508,18 @@
         let minQty = parseInt(selectedService.MinQty) || 1;
         let maxQty = parseInt(selectedService.MaxQty) || 10000;
         
-        if (quantity < minQty) {
+        if (quantity < minQty && quantity > 0) {
             document.getElementById("orderSummary").style.display = "none";
+            showToast(`Minimum quantity is ${minQty}`, true);
             return;
         }
         if (quantity > maxQty) {
             document.getElementById("orderSummary").style.display = "none";
             showToast(`Maximum quantity is ${maxQty}`, true);
+            return;
+        }
+        if (quantity === 0) {
+            document.getElementById("orderSummary").style.display = "none";
             return;
         }
         
@@ -431,7 +536,6 @@
         document.getElementById("totalAmount").innerHTML = formatCurr(totalPKR);
         document.getElementById("orderSummary").style.display = "block";
         
-        // Store for order placement
         selectedService.calculatedTotal = totalPKR;
     }
     
@@ -492,7 +596,7 @@
         }
     }
     
-    function clearForm() {
+    function clearOrderForm() {
         document.getElementById("platformSelect").value = "";
         document.getElementById("serviceSelect").innerHTML = '<option value="">Select a service</option>';
         document.getElementById("quantity").value = "";
@@ -500,76 +604,171 @@
         document.getElementById("serviceDetails").style.display = "none";
         document.getElementById("orderSummary").style.display = "none";
         selectedService = null;
-        // Reset platform highlights
-        document.querySelectorAll('.platform-icon-item').forEach(i => i.classList.remove('active'));
+        document.querySelectorAll('#homePlatformIcons .platform-icon-item').forEach(i => i.classList.remove('active'));
         showToast("Form cleared");
     }
     
-    // Other pages (Dashboard, Services, etc.)
-    async function renderDashboard() { 
-        let stats = await apiCall("userStats"); 
-        let orders = await apiCall("getUserOrders"); 
-        let html = `<div class="grid-cards">
-            <div class="glass-card">💰 Balance: ${formatCurr(currentUser.wallet)}</div>
-            <div class="glass-card">📦 Total Orders: ${stats.totalOrders || 0}</div>
-            <div class="glass-card">⏳ Pending: ${stats.pendingOrders || 0}</div>
-        </div>
-        <div class="glass-card"><h3>Order History</h3>
-        <div style="overflow-x:auto;">${orders.orders?.length ? '<table style="width:100%"><tr><th>Order ID</th><th>Service</th><th>Qty</th><th>Amount</th><th>Status</th></tr>' + orders.orders.map(o => `<tr><td>${o.id}</td><td>${o.serviceName}</td><td>${o.qty}</td><td>${formatCurr(o.amount)}</td><td>${o.status}</td></tr>`).join('') + '</table>' : '<p>No orders yet</p>'}</div></div>`;
-        document.getElementById("pageContent").innerHTML = html;
-    }
-    
-    async function renderServices() { 
-        await loadServices(); 
-        let html = `<div class="glass-card"><input id="searchService" placeholder="🔍 Search by name or ID..."></div>
-        <div class="service-grid" id="serviceGrid"></div>`;
-        document.getElementById("pageContent").innerHTML = html;
-        document.getElementById("searchService").addEventListener("input", filterServices);
-        filterServices();
-    }
-    
-    function filterServices() { 
-        let kw = document.getElementById("searchService")?.value.toLowerCase() || ""; 
-        let filtered = allServices.filter(s => s.Name?.toLowerCase().includes(kw) || s.ServiceId?.toString().includes(kw)); 
-        document.getElementById("serviceGrid").innerHTML = filtered.map(s => `<div class="glass-card"><i class="fab fa-${(s.Platform || '').toLowerCase()}"></i> <strong>${s.Name}</strong><br>Platform: ${s.Platform}<br>Rate: ${formatCurr(s.Per1k ? s.Rate/1000 : s.Rate)} ${s.Per1k ? 'per 1k' : 'per unit'}<br>Min: ${s.MinQty} Max: ${s.MaxQty}<br><button onclick="navigateTo('home')">Order Now</button></div>`).join(''); 
-        if(filtered.length === 0) document.getElementById("serviceGrid").innerHTML = "<p>No services found</p>";
-    }
-    
+    // ========== ADD FUNDS PAGE WITH PAYMENT METHOD SELECTION ==========
     async function renderAddFunds() { 
-        let html = `<div class="glass-card"><h3><i class="fas fa-university"></i> Add Funds</h3>
-        <div style="background:#1e293b; border-radius:20px; padding:15px; margin:15px 0;"><i class="fas fa-mobile-alt"></i> <strong>Easypaisa:</strong> 03198595421 - Muhammad Ramzan Al Sami</div>
-        <div style="background:#1e293b; border-radius:20px; padding:15px; margin:15px 0;"><i class="fas fa-credit-card"></i> <strong>Sadapay:</strong> 03198595421 - Muhammad Ramzan Ul Sami</div>
-        <button id="sentProof" class="btn">I Have Sent Payment</button>
-        <div id="proofForm" style="display:none; margin-top:20px;">
-            <input id="amountFund" placeholder="Amount (PKR)" type="number">
-            <input id="transId" placeholder="Transaction ID">
-            <input id="fundEmail" placeholder="Your Email">
-            <input type="file" id="screenshot" accept="image/*">
-            <button id="submitProof" class="btn" style="margin-top:10px;">Submit Proof</button>
-        </div></div>`;
-        document.getElementById("pageContent").innerHTML = html; 
-        document.getElementById("sentProof").onclick = () => { document.getElementById("proofForm").style.display = "block"; };
-        document.getElementById("submitProof").onclick = async () => { 
+        let paymentMethods = [
+            { name: "Easypaisa", account: "03198595421", holder: "Muhammad Ramzan Al Sami", icon: "fas fa-mobile-alt", color: "#4CAF50" },
+            { name: "Sadapay", account: "03198595421", holder: "Muhammad Ramzan Ul Sami", icon: "fas fa-credit-card", color: "#FF6B6B" }
+        ];
+        
+        let methodsHtml = paymentMethods.map((method, index) => `
+            <div class="payment-method-card" data-method="${method.name}">
+                <div style="display:flex; align-items:center; gap:15px;">
+                    <i class="${method.icon}" style="font-size:32px; color:${method.color}"></i>
+                    <div style="flex:1">
+                        <h3>${method.name}</h3>
+                        <p><strong>Account:</strong> ${method.account}</p>
+                        <p><strong>Account Holder:</strong> ${method.holder}</p>
+                    </div>
+                    <div class="selected-check" style="display:none;">
+                        <i class="fas fa-check-circle" style="color:#10b981; font-size:24px;"></i>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+        
+        let html = `
+            <div class="glass-card">
+                <h3><i class="fas fa-university"></i> Add Funds to Wallet</h3>
+                <p style="margin:15px 0; color:#94a3b8;">Select a payment method and send the exact amount. After payment, submit proof for verification.</p>
+                
+                <h4 style="margin:20px 0 10px 0;">Select Payment Method:</h4>
+                <div id="paymentMethodsList">
+                    ${methodsHtml}
+                </div>
+                
+                <button id="sentProofBtn" class="btn btn-success" style="width:100%; margin-top:20px;" disabled>
+                    <i class="fas fa-check-circle"></i> I Have Sent Payment
+                </button>
+                
+                <div id="proofFormSection" style="display:none; margin-top:25px; padding-top:20px; border-top:1px solid #2d3a5e;">
+                    <h4>Submit Payment Proof</h4>
+                    <div class="form-row">
+                        <div style="flex:1">
+                            <label>Amount (PKR)</label>
+                            <input type="number" id="amountFund" placeholder="Enter amount you sent">
+                        </div>
+                        <div style="flex:1">
+                            <label>Transaction ID</label>
+                            <input id="transId" placeholder="Transaction/Reference ID">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div style="flex:1">
+                            <label>Your Email</label>
+                            <input id="fundEmail" placeholder="Email for confirmation" value="${currentUser?.gmail || ''}">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div style="flex:1">
+                            <label>Screenshot (Payment Proof)</label>
+                            <input type="file" id="screenshot" accept="image/*">
+                            <small style="color:#94a3b8;">Upload screenshot of transaction</small>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <button id="submitProofBtn" class="btn" style="flex:1;"><i class="fas fa-paper-plane"></i> Submit Proof</button>
+                        <button id="cancelProofBtn" class="btn btn-secondary" style="flex:1;"><i class="fas fa-times"></i> Cancel</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.getElementById("pageContent").innerHTML = html;
+        
+        let selectedMethod = null;
+        let sentProofBtn = document.getElementById("sentProofBtn");
+        let proofSection = document.getElementById("proofFormSection");
+        
+        // Add click handlers for payment methods
+        document.querySelectorAll('.payment-method-card').forEach(card => {
+            card.addEventListener('click', () => {
+                document.querySelectorAll('.payment-method-card').forEach(c => {
+                    c.classList.remove('selected');
+                    c.querySelector('.selected-check').style.display = 'none';
+                });
+                card.classList.add('selected');
+                card.querySelector('.selected-check').style.display = 'block';
+                selectedMethod = card.dataset.method;
+                sentProofBtn.disabled = false;
+                sentProofBtn.style.opacity = '1';
+            });
+        });
+        
+        sentProofBtn.addEventListener('click', () => {
+            if (!selectedMethod) {
+                showToast("Please select a payment method first", true);
+                return;
+            }
+            proofSection.style.display = 'block';
+            sentProofBtn.disabled = true;
+        });
+        
+        document.getElementById("cancelProofBtn")?.addEventListener('click', () => {
+            proofSection.style.display = 'none';
+            sentProofBtn.disabled = false;
+        });
+        
+        document.getElementById("submitProofBtn")?.addEventListener('click', async () => {
+            let amount = document.getElementById("amountFund").value;
+            let transId = document.getElementById("transId").value;
+            let email = document.getElementById("fundEmail").value;
             let file = document.getElementById("screenshot").files[0];
+            
+            if (!amount || !transId || !email) {
+                showToast("Please fill all fields", true);
+                return;
+            }
+            
+            if (!file) {
+                showToast("Please upload screenshot", true);
+                return;
+            }
+            
             let reader = new FileReader();
             reader.onload = async () => {
                 let res = await apiCall("addFundsRequest", {
-                    amount: document.getElementById("amountFund").value,
-                    transactionId: document.getElementById("transId").value,
-                    email: document.getElementById("fundEmail").value,
-                    screenshotBase64: reader.result
+                    amount: amount,
+                    transactionId: transId,
+                    email: email,
+                    screenshotBase64: reader.result,
+                    paymentMethod: selectedMethod
                 });
-                showToast(res.message || "Request submitted");
-                if(res.success) document.getElementById("proofForm").style.display = "none";
+                showToast(res.message || "Fund request submitted! Admin will review and add funds to your wallet.");
+                if (res.success) {
+                    proofSection.style.display = 'none';
+                    sentProofBtn.disabled = false;
+                    document.getElementById("amountFund").value = "";
+                    document.getElementById("transId").value = "";
+                    document.getElementById("screenshot").value = "";
+                }
             };
-            if(file) reader.readAsDataURL(file);
-            else showToast("Please upload screenshot", true);
-        };
+            reader.readAsDataURL(file);
+        });
+    }
+    
+    // ========== DASHBOARD ==========
+    async function renderDashboard() { 
+        let stats = await apiCall("userStats"); 
+        let orders = await apiCall("getUserOrders"); 
+        let html = `
+            <div class="grid-cards">
+                <div class="glass-card">💰 Balance: ${formatCurr(currentUser.wallet)}</div>
+                <div class="glass-card">📦 Total Orders: ${stats.totalOrders || 0}</div>
+                <div class="glass-card">⏳ Pending Orders: ${stats.pendingOrders || 0}</div>
+            </div>
+            <div class="glass-card"><h3>Order History</h3>
+            <div style="overflow-x:auto;">${orders.orders?.length ? '<table style="width:100%"><tr><th>Order ID</th><th>Service</th><th>Qty</th><th>Amount</th><th>Status</th></tr>' + orders.orders.map(o => `<tr><td>${o.id}</td><td>${o.serviceName}</td><td>${o.qty}</td><td>${formatCurr(o.amount)}</td><td><span class="badge">${o.status}</span></td></tr>`).join('') + '</table>' : '<p>No orders yet</p>'}</div></div>`;
+        document.getElementById("pageContent").innerHTML = html;
     }
     
     async function renderRecommendations() { 
         document.getElementById("pageContent").innerHTML = `<div class="glass-card"><h3>Share Your Experience</h3>
-            <input id="recEmail" placeholder="Email"><input id="recWhatsapp" placeholder="WhatsApp"><input id="recPhone" placeholder="Phone"><textarea id="recText" placeholder="Your Recommendation"></textarea>
+            <input id="recEmail" placeholder="Email" value="${currentUser?.gmail || ''}"><input id="recWhatsapp" placeholder="WhatsApp"><input id="recPhone" placeholder="Phone"><textarea id="recText" placeholder="Your Recommendation"></textarea>
             <button id="submitRec" class="btn">Submit</button></div>`;
         document.getElementById("submitRec").onclick = async () => {
             let res = await apiCall("submitRecommendation", {
@@ -584,7 +783,7 @@
     
     async function renderJoinUs() { 
         document.getElementById("pageContent").innerHTML = `<div class="glass-card"><h3>Join Our Team</h3>
-            <input id="appName" placeholder="Full Name"><input id="appPhone" placeholder="Phone"><input id="appWhatsapp" placeholder="WhatsApp"><input id="appEmail" placeholder="Email">
+            <input id="appName" placeholder="Full Name" value="${currentUser?.fullName || ''}"><input id="appPhone" placeholder="Phone"><input id="appWhatsapp" placeholder="WhatsApp"><input id="appEmail" placeholder="Email" value="${currentUser?.gmail || ''}">
             <select id="appSalaryType"><option>Commission Based</option><option>Salary Based</option></select>
             <input id="appHours" placeholder="Available hours (4/5/6)"><select id="appShift"><option>Day</option><option>Night</option></select>
             <textarea id="appAbout" placeholder="About Yourself"></textarea>
@@ -614,7 +813,7 @@
     
     async function renderHelp() { 
         document.getElementById("pageContent").innerHTML = `<div class="glass-card"><h3>Need Help?</h3>
-            <input id="helpEmail" placeholder="Email"><input id="helpPhone" placeholder="Phone/WhatsApp"><textarea id="helpMsg" placeholder="Your Message"></textarea>
+            <input id="helpEmail" placeholder="Email" value="${currentUser?.gmail || ''}"><input id="helpPhone" placeholder="Phone/WhatsApp"><textarea id="helpMsg" placeholder="Your Message"></textarea>
             <button id="submitHelp" class="btn">Send</button></div>`;
         document.getElementById("submitHelp").onclick = async () => {
             let res = await apiCall("submitHelp", {
@@ -637,7 +836,6 @@
         else if(page === "help") renderHelp(); 
     }
     
-    // Navigation setup
     document.querySelectorAll("[data-page]").forEach(el => el.addEventListener("click", (e) => { 
         e.preventDefault(); 
         let page = el.getAttribute("data-page"); 
